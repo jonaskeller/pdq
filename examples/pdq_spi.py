@@ -5,7 +5,7 @@ from pdq.host.usb import PDQ
 
 
 class PDQ2SPI(EnvExperiment):
-    """
+    """ PDQ SPI write and read tests.
     Example experiment controling a PDQ board stack from ARTIQ over SPI.
 
     This assumes a working ARTIQ installation (see the ARTIQ manual), working
@@ -15,8 +15,12 @@ class PDQ2SPI(EnvExperiment):
     After building the desired PDQ bitstream flash that bitstream to the
     boards (see the PDQ manual).
 
-    Example device_db entries are provided in device_db.pyon. Adapt them to
+    Example device_db entries are provided in device_db.py. Adapt them to
     your specific situation.
+    
+    Note that test_prog is expected to fail for stacks of boards (i.e.
+    devices with num_boards >1), as readback via SPI is only supported
+    for one board at a time.
     """
     def build(self):
         self.setattr_device("core")
@@ -124,9 +128,9 @@ class PDQ2SPI(EnvExperiment):
         self.led.on()
         self.pdq.set_config(clk2x=1, trigger=0, enable=0, aux_miso=1)
         delay(100*us)
-        data_write = [1, 2, 3, 4, 5, 6, 7, 8]
+        data_write = bytes([1, 2, 3, 4, 5, 6, 7, 8])
         self.pdq.write_mem(0, 0, data_write)
-        data_read = [0]*(len(data_write) + 1)
+        data_read = bytearray([0]*(len(data_write)))
         self.pdq.read_mem(0, 0, data_read)
         for i in range(len(data_write)):
             if data_read[i] != data_write[i]:
@@ -142,7 +146,7 @@ class PDQ2SPI(EnvExperiment):
             mem = i % self.pdq.num_dacs
             data_write = self.pdq_data[i]
             self.pdq.write_mem(mem, 0, data_write, board)
-            data_read = [0]*(len(data_write) + 1)
+            data_read = bytearray([0]*(len(data_write)))
             self.pdq.read_mem(mem, 0, data_read, board)
             delay(100*us)
             for j in range(len(data_write)):
@@ -162,6 +166,4 @@ class PDQ2SPI(EnvExperiment):
         self.pdq_data = []
         for ch in chs:
             data = ch.serialize()
-            data = [data[i + 1] | (data[i] << 8)
-                    for i in range(0, len(data), 2)]
             self.pdq_data.append(data)
