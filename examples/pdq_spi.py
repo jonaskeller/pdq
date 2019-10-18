@@ -1,30 +1,29 @@
 from artiq.experiment import *
 
 from pdq.test.test_dac import _test_program
-from pdq.host.usb import PDQ
 
 
 class PDQ2SPI(EnvExperiment):
+    '''PDQ SPI tests'''
     """
     Example experiment controling a PDQ board stack from ARTIQ over SPI.
-
     This assumes a working ARTIQ installation (see the ARTIQ manual), working
     and configured core device (e.g. KC705), and a hardware adapter with
     an RTIO SPI master connected to the PDQ's SPI bus (see the PDQ or ARTIQ
     manual).
     After building the desired PDQ bitstream flash that bitstream to the
     boards (see the PDQ manual).
-
-    Example device_db entries are provided in device_db.pyon. Adapt them to
+    Example device_db entries are provided in device_db.py. Adapt them to
     your specific situation.
+    
+    Note that readback does not work for channels on slave boards
+    (since MISO is typically only connected to the master's F5 output)
     """
     def build(self):
         self.setattr_device("core")
         self.setattr_device("led")
         # SPI access
         self.setattr_device("pdq")
-        # USB access
-        self.pdq_usb = PDQ("hwgrep://PULSER01")
 
     def run(self):
         prog = _test_program
@@ -32,27 +31,15 @@ class PDQ2SPI(EnvExperiment):
         self.pdq_program(self.pdq, prog)
         # test register access, readback, memory write, memory readback
         self.test()
-        if True:
-            # program waveform data over SPI and run
-            self.prog_spi()
-        else:
-            # program waveform data over USB and run
-            self.prog_usb(prog)
 
-    def prog_usb(self, prog):
-        self.pdq_usb.set_config(reset=1)
-        self.pdq_usb.set_config(reset=0, clk2x=1, enable=0, trigger=0, aux_miso=1,
-                board=0xf)
-        self.pdq_usb.program(prog)
-        self.pdq_usb.set_frame(0)
-        self.pdq_usb.set_config(reset=0, clk2x=1, enable=1, trigger=1, aux_miso=1,
-                board=0xf)
+        # program waveform data over SPI and run
+        self.prog_spi()
 
     @kernel
     def prog_spi(self):
         self.core.reset()
         self.core.break_realtime()
-        self.pdq.setup_bus(write_div=50, read_div=50)
+        self.pdq.setup_bus()
         self.pdq.set_config(reset=1)
         delay(1*ms)
         self.pdq.set_config(reset=0, clk2x=1, enable=0, trigger=0, aux_miso=1,
@@ -82,19 +69,6 @@ class PDQ2SPI(EnvExperiment):
             self.test_mem()
         for i in range(100):
             self.test_prog()
-
-        delay(10*us)
-        config = self.pdq.get_config()
-        delay(10*ms)
-        crc = self.pdq.get_crc()
-        delay(10*ms)
-
-        data = [1, 2, 3, 4, 5]
-        self.pdq.write_mem(mem=2, adr=3, data=data, board=0xf)
-
-        delay(10*us)
-        self.pdq.read_mem(mem=2, adr=3, data=data, board=0xf)
-        print(config, crc, data)
 
     @kernel
     def trigger(self):
@@ -175,6 +149,5 @@ class PDQ2SPI(EnvExperiment):
         self.pdq_data = []
         for ch in chs:
             data = ch.serialize()
-            data = [data[i + 1] | (data[i] << 8)
-                    for i in range(0, len(data), 2)]
+            data = [int(data[i]) for i in range(len(data))]
             self.pdq_data.append(data)
